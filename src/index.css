@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Fraunces', Georgia, serif;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-handwriting: 'Caveat', cursive;
+  --font-retro: 'VT323', monospace;
+
+  --color-cream: #FDFBF7;
+  --color-cream-dark: #F5EFEB;
+  --color-warm-ink: #1F1D1D;
+  --color-butter-yellow: #FEF08A;
+  --color-soft-blush: #FBCFE8;
+  --color-vintage-lilac: #E9D5FF;
+  --color-olive-tint: #ECFCCB;
+  --color-coral-tint: #FED7AA;
+
+  --breakpoint-xs: 380px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #FDFBF7;
+  color: #1F1D1D;
+  overflow-x: hidden;
+  touch-action: manipulation;
+}
+
+/* Custom subtle noise background */
+.bg-grain {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 0);
+  background-size: 20px 20px;
+}
+
+/* Flash animation for camera */
+@keyframes cameraFlash {
+  0% { opacity: 0; }
+  25% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+
+.animate-flash {
+  animation: cameraFlash 0.45s ease-out forwards;
+}
+
+/* Polaroid subtle shadow */
+.shadow-polaroid {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.06), 0 0 1px 1px rgba(0,0,0,0.05);
+}
+
+.shadow-scrapbook {
+  box-shadow: 3px 4px 0px rgba(31, 29, 29, 0.85);
+}
+
+.shadow-button {
+  box-shadow: 2px 3px 0px #1F1D1D;
+}
+
+.shadow-button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 4px 0px #1F1D1D;
+}
+
+.shadow-button:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #1F1D1D;
+}
+
+/* Hide scrollbar for clean horizontal scrolls */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Gen-Z Hero Micro-Animations */
+@keyframes heroFloatGentle {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(1.2deg);
+  }
+}
+
+@keyframes heroFloatReverse {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(6px) rotate(-1.5deg);
+  }
+}
+
+@keyframes heroTwinkle {
+  0%, 100% {
+    transform: scale(0.9) rotate(0deg);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.18) rotate(14deg);
+    opacity: 1;
+  }
+}
+
+@keyframes heroWiggle {
+  0%, 100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+.animate-hero-float {
+  animation: heroFloatGentle 6s ease-in-out infinite;
+}
+
+.animate-hero-float-reverse {
+  animation: heroFloatReverse 5.5s ease-in-out infinite;
+}
+
+.animate-hero-twinkle {
+  animation: heroTwinkle 2.5s ease-in-out infinite;
+}
+
+.animate-hero-wiggle {
+  animation: heroWiggle 3s ease-in-out infinite;
+}
+
+/* Happiness Corner: slow orbit for doodles */
+@keyframes hcOrbit {
+  0%   { transform: rotate(0deg)   translateX(6px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(6px) rotate(-360deg); }
+}
+
+@keyframes hcPop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-hc-orbit {
+  animation: hcOrbit 12s linear infinite;
+}
+
+.animate-hc-pop {
+  animation: hcPop 0.35s ease-out forwards;
+}
+
+/* Respect reduced-motion globally */
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-float,
+  .animate-hero-float-reverse,
+  .animate-hero-twinkle,
+  .animate-hero-wiggle,
+  .animate-hc-orbit,
+  .animate-hc-pop {
+    animation: none !important;
+  }
+  .animate-ping {
+    animation: none !important;
+  }
+}
+
