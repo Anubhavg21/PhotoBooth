@@ -4,6 +4,14 @@ import confetti from 'canvas-confetti';
 import { CapturedPhoto, BrandingConfig, GeneratedDesign } from '../types';
 import { generateAutoMemories } from '../utils/autoDesignEngine';
 import { renderCompositionToCanvas } from '../utils/canvasExport';
+import {
+  isIOS,
+  canvasToBlob,
+  saveOrDownloadImage,
+  saveOrDownloadMultipleImages,
+  triggerBlobDownload,
+} from '../utils/downloadHelper';
+import { SaveToPhotosModal } from './SaveToPhotosModal';
 
 interface AutoResultsScreenProps {
   photos: CapturedPhoto[];
@@ -29,6 +37,13 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
   // Export settings
   const [exportFormat, setExportFormat] = useState<'png' | 'jpeg'>('png');
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+
+  // iOS Save to Photos fallback modal
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [modalImageUrl, setModalImageUrl] = useState<string | null>(null);
+  const [modalImageUrls, setModalImageUrls] = useState<string[]>([]);
+  const [modalFilename, setModalFilename] = useState<string>('click-and-keep.png');
+  const [modalBlob, setModalBlob] = useState<Blob | null>(null);
 
   // Generate designs on mount or photos/branding change
   useEffect(() => {
@@ -87,7 +102,7 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
   const activeDesign = designs[selectedDesignIndex] || designs[0];
   const activePreviewUrl = activeDesign ? renderedPreviews[activeDesign.id] : null;
 
-  // Single download action
+  // Single download action (Cross-platform: iOS Web Share / Android & PC Blob download)
   const handleDownloadActive = async () => {
     if (!activeDesign) return;
     setIsRendering(true);
@@ -101,6 +116,7 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
 
       const mimeType = exportFormat === 'png' ? 'image/png' : 'image/jpeg';
       const dataUrl = canvas.toDataURL(mimeType, 0.95);
+      const blob = await canvasToBlob(canvas, mimeType, 0.95);
 
       const now = new Date();
       const dateFormatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -109,15 +125,26 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
         : 'click-and-keep';
       const filename = `${prefix}-${activeDesign.id}-${dateFormatted}.${exportFormat}`;
 
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const res = await saveOrDownloadImage({
+        blob,
+        dataUrl,
+        filename,
+        title: `${branding.productName} - ${activeDesign.name}`,
+        text: `${branding.tagline} ✨📸`,
+        onOpenFallbackModal: (url, fn) => {
+          setModalImageUrl(url);
+          setModalImageUrls([]);
+          setModalFilename(fn);
+          setModalBlob(blob);
+          setSaveModalOpen(true);
+        },
+      });
 
-      setDownloadNotice(`Downloaded "${activeDesign.name}"! ✨`);
-      setTimeout(() => setDownloadNotice(null), 3000);
+      if (res.success && res.action !== 'modal') {
+        const msg = res.message || (isIOS() ? `Saved "${activeDesign.name}" to Photos! ✨` : `Downloaded "${activeDesign.name}"! ✨`);
+        setDownloadNotice(msg);
+        setTimeout(() => setDownloadNotice(null), 3500);
+      }
     } catch (err) {
       console.error('Download error', err);
     } finally {
@@ -125,11 +152,13 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
     }
   };
 
-  // Download all 5 designs
+  // Download all 5 designs (Cross-platform: multi-share on iOS / sequential download on PC & Android)
   const handleDownloadAll = async () => {
     setIsRendering(true);
-    setDownloadNotice('Packaging all 5 designs...');
+    setDownloadNotice(isIOS() ? 'Packaging all 5 styles for Photos...' : 'Packaging all 5 designs...');
     try {
+      const items: Array<{ blob: Blob; filename: string; dataUrl: string }> = [];
+
       for (let i = 0; i < designs.length; i++) {
         const design = designs[i];
         const canvas = await renderCompositionToCanvas(
@@ -141,19 +170,26 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
 
         const mimeType = exportFormat === 'png' ? 'image/png' : 'image/jpeg';
         const dataUrl = canvas.toDataURL(mimeType, 0.95);
-
-        const link = document.createElement('a');
-        link.href = dataUrl;
-        link.download = `click-and-keep-${design.id}-${Date.now()}.${exportFormat}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        // Brief delay between downloads to prevent browser blocking
-        await new Promise((r) => setTimeout(r, 600));
+        const blob = await canvasToBlob(canvas, mimeType, 0.95);
+        const filename = `click-and-keep-${design.id}-${Date.now()}.${exportFormat}`;
+        items.push({ blob, filename, dataUrl });
       }
-      setDownloadNotice('All 5 designs downloaded! 🎉');
-      setTimeout(() => setDownloadNotice(null), 3500);
+
+      const res = await saveOrDownloadMultipleImages({
+        items,
+        title: `${branding.productName} - All 5 Styles`,
+        onOpenFallbackModal: (urls) => {
+          setModalImageUrl(null);
+          setModalImageUrls(urls);
+          setSaveModalOpen(true);
+        },
+      });
+
+      if (res.success && res.action !== 'modal') {
+        const msg = res.message || (isIOS() ? 'All 5 styles saved to Photos! 🎉' : 'All 5 designs downloaded! 🎉');
+        setDownloadNotice(msg);
+        setTimeout(() => setDownloadNotice(null), 4000);
+      }
     } catch (e) {
       console.error('Download all error', e);
     } finally {
@@ -172,21 +208,27 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
         activeDesign.captions
       );
 
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const file = new File([blob], `click-and-keep-${activeDesign.id}.png`, { type: 'image/png' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: branding.productName,
-            text: `${branding.tagline} ✨📸`,
-          });
-        } else {
-          handleDownloadActive();
-        }
-      }, 'image/png');
-    } catch {
-      handleDownloadActive();
+      const mimeType = exportFormat === 'png' ? 'image/png' : 'image/jpeg';
+      const dataUrl = canvas.toDataURL(mimeType, 0.95);
+      const blob = await canvasToBlob(canvas, mimeType, 0.95);
+      const filename = `click-and-keep-${activeDesign.id}.${exportFormat}`;
+
+      await saveOrDownloadImage({
+        blob,
+        dataUrl,
+        filename,
+        title: branding.productName,
+        text: `${branding.tagline} ✨📸`,
+        onOpenFallbackModal: (url, fn) => {
+          setModalImageUrl(url);
+          setModalImageUrls([]);
+          setModalFilename(fn);
+          setModalBlob(blob);
+          setSaveModalOpen(true);
+        },
+      });
+    } catch (err) {
+      console.error('Share error:', err);
     }
   };
 
@@ -326,38 +368,45 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
               </div>
             </div>
 
-            {/* Primary Download Button */}
+            {/* Primary Download / Save Button */}
             <button
               onClick={handleDownloadActive}
               disabled={isRendering}
-              className="w-full flex items-center justify-center gap-2 bg-[#1F1D1D] hover:bg-[#333033] text-[#FEF08A] font-extrabold text-base py-3.5 rounded-2xl border-2 border-[#1F1D1D] shadow-button active:scale-95 disabled:opacity-50 transition-all"
+              className="w-full flex items-center justify-center gap-2 bg-[#1F1D1D] hover:bg-[#333033] text-[#FEF08A] font-extrabold text-base py-3.5 rounded-2xl border-2 border-[#1F1D1D] shadow-button active:scale-95 disabled:opacity-50 transition-all cursor-pointer"
             >
               <Download className="w-5 h-5" />
-              <span>Download {activeDesign?.name || 'Design'}</span>
+              <span>{isIOS() ? `Save "${activeDesign?.name || 'Design'}" to Photos` : `Download ${activeDesign?.name || 'Design'}`}</span>
             </button>
 
-            {/* Download All 5 Designs */}
+            {/* iOS Helper Hint */}
+            {isIOS() && (
+              <p className="text-[11px] text-gray-500 text-center font-medium -mt-1">
+                💡 Tip: Tap <strong>"Save Image"</strong> in the iOS popup to save to Camera Roll
+              </p>
+            )}
+
+            {/* Download / Save All 5 Designs */}
             <button
               onClick={handleDownloadAll}
               disabled={isRendering}
-              className="w-full flex items-center justify-center gap-2 bg-[#F5EFEB] hover:bg-[#EADBCC] text-[#1F1D1D] font-bold text-xs sm:text-sm py-2.5 rounded-xl border border-[#1F1D1D]/30 transition-all"
+              className="w-full flex items-center justify-center gap-2 bg-[#F5EFEB] hover:bg-[#EADBCC] text-[#1F1D1D] font-bold text-xs sm:text-sm py-2.5 rounded-xl border border-[#1F1D1D]/30 transition-all cursor-pointer"
             >
               <Sparkles className="w-4 h-4 text-amber-500" />
-              <span>Download All 5 Styles</span>
+              <span>{isIOS() ? 'Save All 5 Styles to Photos' : 'Download All 5 Styles'}</span>
             </button>
 
-            {/* Native Share */}
+            {/* Native Share / Additional Actions */}
             <button
               onClick={handleShare}
               disabled={isRendering}
-              className="w-full flex items-center justify-center gap-1.5 text-xs text-gray-600 hover:text-black font-semibold py-1"
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-gray-600 hover:text-black font-semibold py-1 cursor-pointer"
             >
               <Share2 className="w-3.5 h-3.5" />
               <span>Share with friends</span>
             </button>
 
             {downloadNotice && (
-              <p className="text-center text-xs font-bold text-emerald-600 animate-fade-in">
+              <p className="text-center text-xs font-bold text-emerald-600 animate-fade-in bg-emerald-50 py-1.5 px-2.5 rounded-lg border border-emerald-200">
                 {downloadNotice}
               </p>
             )}
@@ -376,7 +425,7 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
 
             <button
               onClick={() => activeDesign && onCustomizeDesign(activeDesign)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 border-2 border-[#1F1D1D] rounded-xl text-xs font-extrabold text-[#1F1D1D] shadow-button active:scale-95 transition-all flex-shrink-0"
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-gray-50 border-2 border-[#1F1D1D] rounded-xl text-xs font-extrabold text-[#1F1D1D] shadow-button active:scale-95 transition-all flex-shrink-0 cursor-pointer"
             >
               <Sliders className="w-3.5 h-3.5" />
               <span>Customize</span>
@@ -384,6 +433,21 @@ export const AutoResultsScreen: React.FC<AutoResultsScreenProps> = ({
           </div>
         </div>
       </div>
+
+      {/* iOS Save to Photos Fallback Modal */}
+      <SaveToPhotosModal
+        isOpen={saveModalOpen}
+        onClose={() => setSaveModalOpen(false)}
+        imageUrl={modalImageUrl}
+        imageUrls={modalImageUrls}
+        filename={modalFilename}
+        onShareSheet={handleShare}
+        onDirectDownload={() => {
+          if (modalBlob) {
+            triggerBlobDownload(modalBlob, modalFilename);
+          }
+        }}
+      />
     </div>
   );
 };

@@ -3,6 +3,8 @@ import { Download, Share2, Sparkles, RotateCcw, ArrowLeft, Heart } from 'lucide-
 import confetti from 'canvas-confetti';
 import { CapturedPhoto, FrameConfig, PlacedSticker, PlacedCaption, BrandingConfig } from '../types';
 import { renderCompositionToCanvas } from '../utils/canvasExport';
+import { isIOS, saveOrDownloadImage, triggerBlobDownload } from '../utils/downloadHelper';
+import { SaveToPhotosModal } from './SaveToPhotosModal';
 
 interface ExportModalProps {
   photos: CapturedPhoto[];
@@ -32,6 +34,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [exportQuality] = useState<number>(0.95);
   const [copySuccess, setCopySuccess] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+
+  // iOS Save to Photos fallback modal
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [modalImageUrl, setModalImageUrl] = useState<string | null>(null);
+  const [modalFilename, setModalFilename] = useState<string>('click-and-keep.png');
 
   // Trigger high-res canvas render
   useEffect(() => {
@@ -80,9 +87,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     };
   }, [photos, frameConfig, stickers, captions, exportFormat, exportQuality]);
 
-  // Download action
-  const handleDownload = () => {
-    if (!exportedDataUrl) return;
+  // Cross-platform download / save to Photos action
+  const handleDownload = async () => {
+    if (!exportedBlob || !exportedDataUrl) return;
 
     const now = new Date();
     const dateFormatted = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -91,60 +98,51 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       : 'click-and-keep';
     const filename = `${baseName}-${dateFormatted}.${exportFormat}`;
 
-    const link = document.createElement('a');
-    link.href = exportedDataUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const res = await saveOrDownloadImage({
+      blob: exportedBlob,
+      dataUrl: exportedDataUrl,
+      filename,
+      title: branding?.productName || 'Click & Keep',
+      text: `${branding?.tagline || 'Core memories'} ✨📸`,
+      onOpenFallbackModal: (url, fn) => {
+        setModalImageUrl(url);
+        setModalFilename(fn);
+        setSaveModalOpen(true);
+      },
+    });
+
+    if (res.success && res.action !== 'modal') {
+      const msg = res.message || (isIOS() ? 'Saved to Photos! ✨' : 'Downloaded to your device!');
+      setShareNotice(msg);
+      setTimeout(() => setShareNotice(null), 3500);
+    }
   };
 
   // Web Share API action
   const handleShare = async () => {
-    if (!exportedBlob) return;
+    if (!exportedBlob || !exportedDataUrl) return;
 
     const baseName = branding?.showRecipientName && branding.recipientName
       ? `${branding.recipientName.toLowerCase()}-memories`
       : 'click-and-keep';
     const filename = `${baseName}-${Date.now()}.${exportFormat}`;
-    const file = new File([exportedBlob], filename, {
-      type: exportFormat === 'png' ? 'image/png' : 'image/jpeg',
+
+    const res = await saveOrDownloadImage({
+      blob: exportedBlob,
+      dataUrl: exportedDataUrl,
+      filename,
+      title: branding?.productName || 'Click & Keep',
+      text: `${branding?.tagline || 'Good pics. Weird poses. Core memories.'} ✨📸`,
+      onOpenFallbackModal: (url, fn) => {
+        setModalImageUrl(url);
+        setModalFilename(fn);
+        setSaveModalOpen(true);
+      },
     });
 
-    const appTitle = branding?.productName || 'Click & Keep';
-    const appTagline = branding?.tagline || 'Good pics. Weird poses. Core memories.';
-
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          title: appTitle,
-          text: `${appTagline} ✨📸`,
-        });
-        setShareNotice('Shared successfully! 💖');
-        setTimeout(() => setShareNotice(null), 3000);
-      } catch (err: unknown) {
-        if ((err as Error).name !== 'AbortError') {
-          handleDownload();
-        }
-      }
-    } else {
-      // Fallback: Copy to clipboard or trigger download
-      try {
-        if (navigator.clipboard && window.ClipboardItem && exportFormat === 'png') {
-          await navigator.clipboard.write([
-            new ClipboardItem({ 'image/png': exportedBlob }),
-          ]);
-          setCopySuccess(true);
-          setTimeout(() => setCopySuccess(false), 2500);
-        } else {
-          handleDownload();
-          setShareNotice('Downloaded to your device!');
-          setTimeout(() => setShareNotice(null), 3000);
-        }
-      } catch {
-        handleDownload();
-      }
+    if (res.success && res.action !== 'modal') {
+      setShareNotice(res.message || 'Shared successfully! 💖');
+      setTimeout(() => setShareNotice(null), 3000);
     }
   };
 
@@ -258,16 +256,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <button
               onClick={handleDownload}
               disabled={isExporting}
-              className="w-full flex items-center justify-center gap-2.5 bg-[#1F1D1D] hover:bg-[#333033] text-[#FEF08A] font-extrabold text-base py-3.5 rounded-2xl border-2 border-[#1F1D1D] shadow-button active:scale-95 disabled:opacity-50 transition-all"
+              className="w-full flex items-center justify-center gap-2.5 bg-[#1F1D1D] hover:bg-[#333033] text-[#FEF08A] font-extrabold text-base py-3.5 rounded-2xl border-2 border-[#1F1D1D] shadow-button active:scale-95 disabled:opacity-50 transition-all cursor-pointer"
             >
               <Download className="w-5 h-5" />
-              <span>Download to Device</span>
+              <span>{isIOS() ? 'Save to Photos' : 'Download to Device'}</span>
             </button>
+
+            {isIOS() && (
+              <p className="text-[11px] text-gray-500 text-center font-medium -mt-1">
+                💡 Tip: Tap <strong>"Save Image"</strong> in the iOS popup to save to Camera Roll
+              </p>
+            )}
 
             <button
               onClick={handleShare}
               disabled={isExporting}
-              className="w-full flex items-center justify-center gap-2 bg-[#F5EFEB] hover:bg-[#EADBCC] text-[#1F1D1D] font-bold text-sm py-3 rounded-2xl border-2 border-[#1F1D1D] shadow-button active:scale-95 disabled:opacity-50 transition-all"
+              className="w-full flex items-center justify-center gap-2 bg-[#F5EFEB] hover:bg-[#EADBCC] text-[#1F1D1D] font-bold text-sm py-3 rounded-2xl border-2 border-[#1F1D1D] shadow-button active:scale-95 disabled:opacity-50 transition-all cursor-pointer"
             >
               <Share2 className="w-4 h-4" />
               <span>Share / Send to Friend</span>
@@ -280,7 +284,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             )}
 
             {shareNotice && (
-              <p className="text-center text-xs font-bold text-purple-700 animate-fade-in">
+              <p className="text-center text-xs font-bold text-purple-700 animate-fade-in bg-purple-50 py-1 px-2.5 rounded-lg border border-purple-200">
                 {shareNotice}
               </p>
             )}
@@ -304,13 +308,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <div className="pt-2">
             <button
               onClick={onStartNewSession}
-              className="w-full text-center text-xs text-gray-500 hover:text-black font-bold underline"
+              className="w-full text-center text-xs text-gray-500 hover:text-black font-bold underline cursor-pointer"
             >
               Create another photo strip →
             </button>
           </div>
         </div>
       </div>
+
+      {/* iOS Save to Photos Fallback Modal */}
+      <SaveToPhotosModal
+        isOpen={saveModalOpen}
+        onClose={() => setSaveModalOpen(false)}
+        imageUrl={modalImageUrl}
+        filename={modalFilename}
+        onShareSheet={handleShare}
+        onDirectDownload={() => {
+          if (exportedBlob) {
+            triggerBlobDownload(exportedBlob, modalFilename);
+          }
+        }}
+      />
     </div>
   );
 };

@@ -141,6 +141,18 @@ export const App: React.FC = () => {
               // Automatically process photos and show ready-made designs!
               handleNavigate('auto-results');
             }}
+            onProceedToEdit={(capturedPhotos) => {
+              setPhotos(capturedPhotos);
+              // If only 1 photo, set initial frame layout to Polaroid instant card
+              if (capturedPhotos.length === 1) {
+                setFrameConfig((prev) => ({
+                  ...prev,
+                  layoutId: 'polaroid-stack',
+                  borderRadius: 6,
+                }));
+              }
+              handleNavigate('filter');
+            }}
             onUseSamplePhotos={handleUseSamplePhotos}
           />
         )}

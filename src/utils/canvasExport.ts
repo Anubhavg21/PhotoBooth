@@ -378,9 +378,9 @@ export async function renderCompositionToCanvas(
     ctx.fillText(frameConfig.subtitle, canvasWidth / 2, canvasHeight - 45);
   } else {
     // y2k-collage or modern-editorial
-    const pad = 80;
+    const pad = photoCount === 1 ? 120 : 80;
     const topBar = 150;
-    const cols = photoCount > 4 ? 3 : 2;
+    const cols = photoCount === 1 ? 1 : photoCount > 4 ? 3 : 2;
     const rows = Math.ceil(photoCount / cols);
     const gap = 35;
     const cellW = (canvasWidth - pad * 2 - gap * (cols - 1)) / cols;
