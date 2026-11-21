@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { Step, CapturedPhoto, FrameConfig, PlacedSticker, PlacedCaption, ShotCount, BrandingConfig, GeneratedDesign } from './types';
 import { Navbar } from './components/Navbar';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -268,6 +269,7 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+      <Analytics />
     </div>
   );
 };
